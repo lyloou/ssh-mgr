@@ -3,7 +3,7 @@ name = "prod-api-01"
 host = "10.0.0.11"
 port = 22
 user = "ubuntu"
-description = "生产 API 主节点"
+description = "lyloou prod API server"
 tags = ["api", "production"]
 
 [server.password]
