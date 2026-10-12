@@ -8,9 +8,7 @@ anyhow = "1"
 crossterm = "0.28"
 dirs = "5"
 ratatui = "0.29"
-rpassword = "7"
 serde = { version = "1", features = ["derive"] }
-ssh2 = "0.9"
 toml = "0.8"
 
 [[bin]]

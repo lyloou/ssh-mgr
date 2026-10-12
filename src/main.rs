@@ -7,15 +7,61 @@ use config::scanner::scan;
 use std::{
     fs,
     path::{Path, PathBuf},
+    process::Command,
 };
 
 fn main() -> Result<()> {
+    ensure_tmux_session()?;
     let config_dir = parse_config_dir()?;
     if is_default_config_dir() {
         initialize_default_config(&config_dir)?;
     }
     let servers = scan(&config_dir)?;
-    tui::run(servers)
+    tui::run(servers, config_dir)
+}
+
+fn ensure_tmux_session() -> Result<()> {
+    if std::env::var_os("TMUX").is_some() {
+        return Ok(());
+    }
+    let executable = std::env::current_exe()?;
+    let session_exists = Command::new("tmux")
+        .args(["has-session", "-t", "ssh-mgr"])
+        .status()
+        .map_err(|error| anyhow::anyhow!("unable to start tmux: {error}"))?
+        .success();
+    if !session_exists {
+        let mut command = Command::new("tmux");
+        command.args(["new-session", "-d", "-s", "ssh-mgr", "-n", "ssh-mgr", "--"]);
+        command.arg(&executable);
+        command.args(std::env::args_os().skip(1));
+        let status = command.status()?;
+        if !status.success() {
+            anyhow::bail!("tmux failed to create session ssh-mgr: {status}");
+        }
+    } else {
+        let manager_window_exists = Command::new("tmux")
+            .args(["select-window", "-t", "ssh-mgr:ssh-mgr"])
+            .status()?
+            .success();
+        if !manager_window_exists {
+            let mut command = Command::new("tmux");
+            command.args(["new-window", "-d", "-t", "ssh-mgr:", "-n", "ssh-mgr", "--"]);
+            command.arg(&executable);
+            command.args(std::env::args_os().skip(1));
+            let status = command.status()?;
+            if !status.success() {
+                anyhow::bail!("tmux failed to create ssh-mgr window: {status}");
+            }
+        }
+    }
+    let status = Command::new("tmux")
+        .args(["attach-session", "-t", "ssh-mgr:ssh-mgr"])
+        .status()?;
+    if !status.success() {
+        anyhow::bail!("tmux failed to attach ssh-mgr session: {status}");
+    }
+    std::process::exit(0);
 }
 
 fn is_default_config_dir() -> bool {
@@ -53,8 +99,9 @@ fn parse_config_dir() -> Result<PathBuf> {
         }
         anyhow::bail!("unknown argument: {:?}", flag);
     }
-    Ok(dirs::config_dir()
+    Ok(dirs::home_dir()
         .unwrap_or_else(|| PathBuf::from("."))
+        .join(".config")
         .join("ssh-mgr"))
 }
 

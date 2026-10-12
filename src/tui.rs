@@ -1,4 +1,7 @@
-use crate::{config::model::Server, search};
+use crate::{
+    config::{model::Server, scanner::scan},
+    search,
+};
 use anyhow::Result;
 use crossterm::{
     event::{self, Event, KeyCode, KeyEvent, KeyModifiers},
@@ -7,66 +10,116 @@ use crossterm::{
 };
 use ratatui::{
     prelude::*,
-    widgets::{Block, Borders, List, ListItem, ListState, Paragraph, Wrap},
+    widgets::{Block, Borders, Clear, List, ListItem, ListState, Paragraph, Wrap},
 };
 use std::{
-    io::{self, Read, Write},
-    net::TcpStream,
-    time::Duration,
+    collections::{BTreeMap, HashSet},
+    fs, io,
+    path::{Path, PathBuf},
+    process::Command,
+    time::{SystemTime, UNIX_EPOCH},
 };
 
-pub fn run(servers: Vec<Server>) -> Result<()> {
+pub fn run(servers: Vec<Server>, config_dir: PathBuf) -> Result<()> {
     enable_raw_mode()?;
     let mut stdout = io::stdout();
-    execute!(stdout, EnterAlternateScreen)?;
-    let result = run_app(&mut Terminal::new(CrosstermBackend::new(stdout))?, servers);
+    execute!(stdout, EnterAlternateScreen, crossterm::cursor::Hide)?;
+    let result = run_app(
+        &mut Terminal::new(CrosstermBackend::new(stdout))?,
+        servers,
+        config_dir,
+    );
     disable_raw_mode()?;
-    execute!(io::stdout(), LeaveAlternateScreen)?;
+    execute!(io::stdout(), crossterm::cursor::Show, LeaveAlternateScreen)?;
     result
 }
 
-fn run_app<B: Backend>(terminal: &mut Terminal<B>, servers: Vec<Server>) -> Result<()> {
+fn run_app<B: Backend>(
+    terminal: &mut Terminal<B>,
+    mut servers: Vec<Server>,
+    config_dir: PathBuf,
+) -> Result<()> {
     let mut query = String::new();
     let mut selected = 0usize;
     let mut searching = false;
+    let mut help = false;
+    let mut collapsed = HashSet::new();
+    let mut status = String::new();
     loop {
-        let matches = search::filter(&servers, &query);
-        if selected >= matches.len() && !matches.is_empty() {
-            selected = matches.len() - 1;
+        let rows = visible_rows(&servers, &query, &collapsed);
+        if selected >= rows.len() && !rows.is_empty() {
+            selected = rows.len() - 1;
         }
-        terminal.draw(|frame| draw(frame, &matches, selected, &query, searching))?;
+        terminal.draw(|frame| draw(frame, &rows, selected, &query, searching, &status, help))?;
         if let Event::Key(KeyEvent {
             code, modifiers, ..
         }) = event::read()?
         {
-            match (code, modifiers, searching) {
-                (KeyCode::Char('q'), _, false) => break,
-                (KeyCode::Char('/'), _, false) => searching = true,
-                (KeyCode::Esc, _, true) => {
+            match (code, modifiers, searching, help) {
+                (KeyCode::Char('q'), _, false, false) => break,
+                (KeyCode::Char('/'), _, false, false) => searching = true,
+                (KeyCode::Char('?'), _, false, false) => help = true,
+                (KeyCode::Esc, _, _, true) | (KeyCode::Char('?'), _, _, true) => help = false,
+                (KeyCode::Esc, _, true, false) => {
                     searching = false;
                     query.clear();
                     selected = 0;
                 }
-                (KeyCode::Backspace, _, true) => {
+                (KeyCode::Backspace, _, true, false) => {
                     query.pop();
                     selected = 0;
                 }
-                (KeyCode::Char(c), _, true) => {
+                (KeyCode::Char(c), _, true, false) => {
                     query.push(c);
                     selected = 0;
                 }
-                (KeyCode::Down, _, false) | (KeyCode::Char('j'), _, false) => {
-                    if selected + 1 < matches.len() {
+                (KeyCode::Down, _, false, false) | (KeyCode::Char('j'), _, false, false) => {
+                    if selected + 1 < rows.len() {
                         selected += 1;
                     }
                 }
-                (KeyCode::Up, _, false) | (KeyCode::Char('k'), _, false) => {
+                (KeyCode::Up, _, false, false) | (KeyCode::Char('k'), _, false, false) => {
                     selected = selected.saturating_sub(1);
                 }
-                (KeyCode::Enter, _, false) if !matches.is_empty() => {
-                    connect(matches[selected])?;
+                (KeyCode::Left, _, false, false) => {
+                    toggle_group(&rows, selected, &mut collapsed, true)
                 }
-                (KeyCode::Char('c'), KeyModifiers::CONTROL, _) => break,
+                (KeyCode::Right, _, false, false) => {
+                    toggle_group(&rows, selected, &mut collapsed, false)
+                }
+                (KeyCode::Char('r'), _, false, false) => match scan(&config_dir) {
+                    Ok(updated) => {
+                        servers = updated;
+                        selected = 0;
+                        status = format!("Reloaded {} servers", servers.len());
+                    }
+                    Err(error) => status = format!("Reload failed: {error}"),
+                },
+                (KeyCode::Char('o'), _, false, false) => {
+                    if let Some(Row::Server(server)) = rows.get(selected) {
+                        if let Err(error) = launch_ssh(server, false) {
+                            status = format!("SSH failed: {error}");
+                        }
+                        terminal.clear()?;
+                    }
+                }
+                (KeyCode::Char('O'), _, false, false) => {
+                    if let Some(Row::Server(server)) = rows.get(selected) {
+                        if let Err(error) = launch_ssh(server, true) {
+                            status = format!("SSH failed: {error}");
+                        }
+                        terminal.clear()?;
+                    }
+                }
+                (KeyCode::Enter, _, false, false) => {
+                    if let Some(Row::Server(server)) = rows.get(selected) {
+                        if let Err(error) = launch_ssh(server, false) {
+                            status = format!("SSH failed: {error}");
+                        }
+                        terminal.clear()?;
+                    }
+                }
+                (KeyCode::Char('c'), KeyModifiers::CONTROL, _, _) => break,
                 _ => {}
             }
         }
@@ -74,30 +127,107 @@ fn run_app<B: Backend>(terminal: &mut Terminal<B>, servers: Vec<Server>) -> Resu
     Ok(())
 }
 
-fn draw(frame: &mut Frame, servers: &[&Server], selected: usize, query: &str, searching: bool) {
+enum Row<'a> {
+    Group {
+        name: String,
+        count: usize,
+        collapsed: bool,
+    },
+    Server(&'a Server),
+}
+
+fn visible_rows<'a>(
+    servers: &'a [Server],
+    query: &str,
+    collapsed: &HashSet<String>,
+) -> Vec<Row<'a>> {
+    let matches = search::filter(servers, query);
+    let mut groups = BTreeMap::<String, Vec<&Server>>::new();
+    for server in matches {
+        groups.entry(server.group.clone()).or_default().push(server);
+    }
+    let mut rows = Vec::new();
+    for (name, group_servers) in groups {
+        let is_collapsed = collapsed.contains(&name);
+        rows.push(Row::Group {
+            name,
+            count: group_servers.len(),
+            collapsed: is_collapsed,
+        });
+        if !is_collapsed {
+            rows.extend(group_servers.into_iter().map(Row::Server));
+        }
+    }
+    rows
+}
+
+fn toggle_group(
+    rows: &[Row<'_>],
+    selected: usize,
+    collapsed: &mut HashSet<String>,
+    collapse: bool,
+) {
+    let group = match rows.get(selected) {
+        Some(Row::Group { name, .. }) => Some(name.clone()),
+        Some(Row::Server(server)) => Some(server.group.clone()),
+        None => None,
+    };
+    if let Some(group) = group {
+        if collapse {
+            collapsed.insert(group);
+        } else {
+            collapsed.remove(&group);
+        }
+    }
+}
+
+#[allow(clippy::too_many_arguments)]
+fn draw(
+    frame: &mut Frame,
+    rows: &[Row<'_>],
+    selected: usize,
+    query: &str,
+    searching: bool,
+    status: &str,
+    help: bool,
+) {
     let areas = Layout::default()
         .direction(Direction::Horizontal)
         .constraints([Constraint::Percentage(45), Constraint::Percentage(55)])
         .split(frame.area());
-    let items = servers
+    let items = rows
         .iter()
-        .map(|server| {
-            ListItem::new(format!(
-                "{}/{}  {}@{}:{}",
-                server.group, server.name, server.user, server.host, server.port
-            ))
+        .map(|row| {
+            ListItem::new(match row {
+                Row::Group {
+                    name,
+                    count,
+                    collapsed,
+                } => format!(
+                    "{} {} ({})",
+                    if *collapsed { "▸" } else { "▾" },
+                    name,
+                    count
+                ),
+                Row::Server(server) => format!(
+                    "  {}  {}@{}:{}",
+                    server.name, server.user, server.host, server.port
+                ),
+            })
         })
         .collect::<Vec<_>>();
     let title = if searching {
         format!("Search: {}", query)
     } else {
         format!(
-            "Servers ({})  / search  Enter connect  q quit",
-            servers.len()
+            "Servers ({})  / search  o enter  O background  q quit",
+            rows.iter()
+                .filter(|row| matches!(row, Row::Server(_)))
+                .count()
         )
     };
     let mut state = ListState::default();
-    state.select((!servers.is_empty()).then_some(selected));
+    state.select((!rows.is_empty()).then_some(selected));
     frame.render_stateful_widget(
         List::new(items)
             .block(Block::default().title(title).borders(Borders::ALL))
@@ -105,7 +235,11 @@ fn draw(frame: &mut Frame, servers: &[&Server], selected: usize, query: &str, se
         areas[0],
         &mut state,
     );
-    if let Some(server) = servers.get(selected) {
+    let right_areas = Layout::default()
+        .direction(Direction::Vertical)
+        .constraints([Constraint::Min(8), Constraint::Length(10)])
+        .split(areas[1]);
+    if let Some(Row::Server(server)) = rows.get(selected) {
         let auth = server
             .password
             .as_ref()
@@ -136,95 +270,266 @@ fn draw(frame: &mut Frame, servers: &[&Server], selected: usize, query: &str, se
             Paragraph::new(text)
                 .wrap(Wrap { trim: false })
                 .block(Block::default().title("Details").borders(Borders::ALL)),
-            areas[1],
+            right_areas[0],
+        );
+    } else if let Some(Row::Group {
+        name,
+        count,
+        collapsed,
+    }) = rows.get(selected)
+    {
+        frame.render_widget(
+            Paragraph::new(format!(
+                "Group: {}\nServers shown: {}\nState: {}",
+                name,
+                count,
+                if *collapsed { "collapsed" } else { "expanded" }
+            ))
+            .block(Block::default().title("Details").borders(Borders::ALL)),
+            right_areas[0],
+        );
+    } else {
+        frame.render_widget(
+            Paragraph::new("No server selected")
+                .block(Block::default().title("Details").borders(Borders::ALL)),
+            right_areas[0],
+        );
+    }
+    let help_text = "↑/↓  移动\n←/→  折叠或展开分组\no  进入 SSH\nO  后台打开 SSH\nEnter  进入 SSH\n/  搜索\nEsc  清除搜索或返回\nr  重新扫描配置\nq  退出\n?  显示快捷键";
+    frame.render_widget(
+        Paragraph::new(help_text).block(Block::default().title("操作").borders(Borders::ALL)),
+        right_areas[1],
+    );
+    if !status.is_empty() {
+        frame.render_widget(
+            Paragraph::new(status.to_string()).style(Style::default().fg(Color::Yellow)),
+            Rect::new(
+                1,
+                frame.area().height.saturating_sub(1),
+                frame.area().width.saturating_sub(2),
+                1,
+            ),
+        );
+    }
+    if help {
+        let area = centered_rect(70, 70, frame.area());
+        frame.render_widget(Clear, area);
+        frame.render_widget(
+            Paragraph::new("↑/↓  移动\n←/→  折叠或展开分组\no  进入 SSH\nO  后台打开 SSH\nEnter  进入 SSH\n/  搜索\nEsc  清除搜索或返回\nr  重新扫描配置\nq  退出\n?  关闭帮助")
+                .block(Block::default().title("快捷键").borders(Borders::ALL))
+                .wrap(Wrap { trim: false }),
+            area,
         );
     }
 }
 
-fn connect(server: &Server) -> Result<()> {
-    disable_raw_mode()?;
-    execute!(io::stdout(), LeaveAlternateScreen)?;
-    let result = connect_ssh(server);
-    if let Err(error) = &result {
-        eprintln!("SSH failed: {error}");
-    }
-    eprintln!("Press Enter to return.");
-    let mut line = String::new();
-    let _ = io::stdin().read_line(&mut line);
-    enable_raw_mode()?;
-    execute!(io::stdout(), EnterAlternateScreen)?;
-    result
+fn centered_rect(percent_x: u16, percent_y: u16, area: Rect) -> Rect {
+    let vertical = Layout::default()
+        .direction(Direction::Vertical)
+        .constraints([
+            Constraint::Percentage((100 - percent_y) / 2),
+            Constraint::Percentage(percent_y),
+            Constraint::Percentage((100 - percent_y) / 2),
+        ])
+        .split(area);
+    Layout::default()
+        .direction(Direction::Horizontal)
+        .constraints([
+            Constraint::Percentage((100 - percent_x) / 2),
+            Constraint::Percentage(percent_x),
+            Constraint::Percentage((100 - percent_x) / 2),
+        ])
+        .split(vertical[1])[1]
 }
 
-fn connect_ssh(server: &Server) -> Result<()> {
-    let tcp = TcpStream::connect((server.host.as_str(), server.port))?;
-    let mut session = ssh2::Session::new()?;
-    session.set_tcp_stream(tcp);
-    session.handshake()?;
+fn launch_ssh(server: &Server, background: bool) -> Result<()> {
+    disable_raw_mode()?;
+    execute!(io::stdout(), crossterm::cursor::Show, LeaveAlternateScreen)?;
+    let result = match build_ssh_wrapper(server) {
+        Ok(wrapper) => {
+            let result = launch_tmux(&wrapper, server, background);
+            if result.is_err() {
+                let _ = fs::remove_dir_all(wrapper.parent().unwrap_or(wrapper.as_path()));
+            }
+            result
+        }
+        Err(error) => Err(error),
+    };
+    let restore = enable_raw_mode()
+        .and_then(|_| execute!(io::stdout(), EnterAlternateScreen, crossterm::cursor::Hide));
+    match (result, restore) {
+        (Err(error), _) => Err(error),
+        (Ok(()), Err(error)) => Err(error.into()),
+        (Ok(()), Ok(())) => Ok(()),
+    }
+}
+
+fn build_ssh_wrapper(server: &Server) -> Result<PathBuf> {
+    let id = SystemTime::now().duration_since(UNIX_EPOCH)?.as_nanos();
+    let dir = std::env::temp_dir().join(format!("ssh-mgr-{id}"));
+    fs::create_dir(&dir)?;
+    let wrapper = dir.join("run.sh");
+    let helper = dir.join("askpass.sh");
+    let password_file = dir.join("password");
+    let mut args = vec!["ssh".to_string(), "-p".to_string(), server.port.to_string()];
     let auth = server.password.as_ref().cloned().unwrap_or_default();
-    if let Some(key) = auth.key {
-        session.userauth_pubkey_file(
-            &server.user,
-            None,
-            std::path::Path::new(&shellexpand(&key)),
-            None,
-        )?;
+    let _ = auth.prompt;
+    let use_askpass = if let Some(key) = auth.key {
+        args.extend(["-i".to_string(), shellexpand(&key)]);
+        false
+    } else if let Some(value) = auth.value {
+        fs::write(&password_file, value)?;
+        true
+    } else if let Some(env) = auth.env {
+        let value = std::env::var(&env)
+            .map_err(|_| anyhow::anyhow!("environment variable {env} is not set"))?;
+        fs::write(&password_file, value)?;
+        true
     } else {
-        let password = if auth.prompt {
-            rpassword::prompt_password("SSH password: ")?
-        } else if let Some(value) = auth.value {
-            value
-        } else if let Some(env) = auth.env {
-            std::env::var(&env)
-                .map_err(|_| anyhow::anyhow!("environment variable {env} is not set"))?
-        } else {
-            rpassword::prompt_password("SSH password: ")?
-        };
-        session.userauth_password(&server.user, &password)?;
+        false
+    };
+    args.push(format!("{}@{}", server.user, server.host));
+    let mut script = String::from("#!/bin/sh\nset -u\n");
+    script.push_str(&format!(
+        "trap 'rm -rf {}' EXIT\n",
+        shell_quote(&dir.display().to_string())
+    ));
+    if use_askpass {
+        fs::write(
+            &helper,
+            format!(
+                "#!/bin/sh\ncat {}\n",
+                shell_quote(&password_file.display().to_string())
+            ),
+        )?;
+        set_executable(&helper)?;
+        script.push_str(&format!(
+            "export SSH_ASKPASS={}\n",
+            shell_quote(&helper.display().to_string())
+        ));
+        script.push_str("export SSH_ASKPASS_REQUIRE=force\nexport DISPLAY=ssh-mgr\n");
     }
-    if !session.authenticated() {
-        anyhow::bail!("SSH authentication failed");
-    }
-    session.set_blocking(false);
-    let mut channel = session.channel_session()?;
-    channel.request_pty("xterm", None, Some((120, 40, 0, 0)))?;
-    channel.shell()?;
-    let mut stdout = io::stdout();
-    let mut buffer = [0u8; 4096];
-    loop {
-        match channel.read(&mut buffer) {
-            Ok(size) if size > 0 => {
-                stdout.write_all(&buffer[..size])?;
-                stdout.flush()?;
-            }
-            Ok(_) if channel.eof() => break,
-            Err(error) if error.kind() == io::ErrorKind::WouldBlock => {}
-            Err(error) => return Err(error.into()),
-            _ => {}
+    script.push_str(
+        &args
+            .iter()
+            .map(|arg| shell_quote(arg))
+            .collect::<Vec<_>>()
+            .join(" "),
+    );
+    script.push('\n');
+    fs::write(&wrapper, script)?;
+    set_executable(&wrapper)?;
+    Ok(wrapper)
+}
+
+fn launch_tmux(wrapper: &Path, server: &Server, background: bool) -> Result<()> {
+    let name = format!("{}__{}", server.group.replace('/', "_"), server.name);
+    let inside = std::env::var_os("TMUX").is_some();
+    if !inside {
+        let exists = Command::new("tmux")
+            .args(["has-session", "-t", "ssh-mgr"])
+            .status()?
+            .success();
+        if !exists {
+            Command::new("tmux")
+                .args(["new-session", "-d", "-s", "ssh-mgr", "-n", "manager"])
+                .status()?;
         }
-        if event::poll(Duration::from_millis(20))? {
-            if let Event::Key(key) = event::read()? {
-                match key.code {
-                    KeyCode::Char(c) => channel.write_all(c.to_string().as_bytes())?,
-                    KeyCode::Enter => channel.write_all(b"\r")?,
-                    KeyCode::Backspace => channel.write_all(&[8])?,
-                    KeyCode::Tab => channel.write_all(b"\t")?,
-                    KeyCode::Esc => channel.write_all(&[27])?,
-                    KeyCode::Up => channel.write_all(b"\x1b[A")?,
-                    KeyCode::Down => channel.write_all(b"\x1b[B")?,
-                    KeyCode::Right => channel.write_all(b"\x1b[C")?,
-                    KeyCode::Left => channel.write_all(b"\x1b[D")?,
-                    _ => {}
-                }
-            }
+    }
+    let mut command = Command::new("tmux");
+    command.arg("new-window");
+    if background {
+        command.arg("-d");
+    }
+    if !inside {
+        command.args(["-t", "ssh-mgr:"]);
+    }
+    let status = command
+        .args(["-n", &name, wrapper.to_str().unwrap()])
+        .status()?;
+    if !status.success() {
+        anyhow::bail!("tmux failed to create SSH window");
+    }
+    if !inside && !background {
+        let status = Command::new("tmux")
+            .args(["attach-session", "-t", "ssh-mgr"])
+            .status()?;
+        if !status.success() {
+            anyhow::bail!("tmux failed to attach ssh-mgr session");
         }
     }
-    channel.wait_close()?;
     Ok(())
+}
+
+fn set_executable(path: &PathBuf) -> Result<()> {
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        fs::set_permissions(path, fs::Permissions::from_mode(0o700))?;
+    }
+    Ok(())
+}
+
+fn shell_quote(value: &str) -> String {
+    format!("'{}'", value.replace('\'', "'\\''"))
 }
 
 fn shellexpand(path: &str) -> String {
     path.strip_prefix("~/")
         .and_then(|rest| dirs::home_dir().map(|home| home.join(rest).display().to_string()))
         .unwrap_or_else(|| path.to_string())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{visible_rows, Row};
+    use crate::config::model::Server;
+    use std::{collections::HashSet, path::PathBuf};
+
+    fn server(group: &str, name: &str) -> Server {
+        Server {
+            name: name.into(),
+            host: "localhost".into(),
+            port: 22,
+            user: "root".into(),
+            description: String::new(),
+            tags: Vec::new(),
+            password: None,
+            group: group.into(),
+            source: PathBuf::new(),
+        }
+    }
+
+    #[test]
+    fn collapsed_group_keeps_a_representative_row() {
+        let servers = vec![
+            server("prod", "api"),
+            server("prod", "db"),
+            server("staging", "api"),
+        ];
+        let collapsed = HashSet::from([String::from("prod")]);
+        let rows = visible_rows(&servers, "", &collapsed);
+        assert!(matches!(
+            rows[0],
+            Row::Group {
+                collapsed: true,
+                ..
+            }
+        ));
+        assert!(matches!(rows[1], Row::Group { ref name, .. } if name == "staging"));
+        assert!(matches!(rows[2], Row::Server(server) if server.name == "api"));
+    }
+
+    #[test]
+    fn password_value_is_not_written_to_ssh_command_script() {
+        let mut server = server("prod", "api");
+        server.password = Some(crate::config::model::PasswordConfig {
+            value: Some("secret-value".into()),
+            ..Default::default()
+        });
+        let wrapper = super::build_ssh_wrapper(&server).unwrap();
+        let script = std::fs::read_to_string(&wrapper).unwrap();
+        assert!(!script.contains("secret-value"));
+        std::fs::remove_dir_all(wrapper.parent().unwrap()).unwrap();
+    }
 }
