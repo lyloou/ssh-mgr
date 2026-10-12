@@ -6,7 +6,18 @@
 
 ## 安装与启动
 
-需要 Rust stable、OpenSSH 和 tmux。macOS 可以使用 `brew install tmux` 安装 tmux。
+运行需要 OpenSSH 和 tmux。macOS 可以使用 `brew install tmux` 安装 tmux。
+
+安装与当前操作系统、CPU 架构对应的 Release：
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/lyloou/ssh-mgr/main/install.sh | bash
+./install.sh 0.1.0       # 指定版本（在本地仓库内执行）
+```
+
+二进制安装到 `~/.local/bin`，脚本会幂等添加 PATH 到 `.zshrc` 或 `.bashrc`；重新加载对应配置后即可运行。可通过 `SSH_MGR_INSTALL_DIR` 指定安装目录。
+
+从源码构建还需要 Rust stable：
 
 ```bash
 cargo build --release
@@ -100,3 +111,14 @@ cargo build --release
 ```
 
 贡献要求见 [CONTRIBUTING.md](CONTRIBUTING.md)，安全说明见 [SECURITY.md](SECURITY.md)，项目采用 [MIT 许可证](LICENSE)。
+
+## 发布
+
+先更新 `Cargo.toml` 和 `Cargo.lock` 中的版本，再运行（需要已登录的 GitHub CLI `gh`）：
+
+```bash
+./publish.sh             # 使用 Cargo.toml 版本
+./publish.sh 0.1.0       # 必须与 Cargo.toml 一致
+```
+
+脚本构建当前机器平台的二进制并发布到 GitHub。产物为 `target/archive/ssh-mgr-vX.Y.Z-<os>-<arch>.tar.gz`，包含二进制、安装脚本和示例配置。支持 `macos`/`linux` 与 `aarch64`/`x86_64` 平台标签；每次发布只提供当前构建平台的包，Linux 包需要兼容的系统运行库。

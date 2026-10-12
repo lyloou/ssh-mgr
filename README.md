@@ -29,6 +29,16 @@ brew install tmux
 
 ## Install And Run
 
+Install a prebuilt release for your OS and CPU architecture (OpenSSH and tmux are still required):
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/lyloou/ssh-mgr/main/install.sh | bash
+# Or select a version:
+./install.sh 0.1.0
+```
+
+The installer places the binary in `~/.local/bin` and adds that directory to `.zshrc` or `.bashrc`. Reload the shell configuration before running `ssh-mgr`. Set `SSH_MGR_INSTALL_DIR` to choose another directory.
+
 Build from source:
 
 ```bash
@@ -206,6 +216,15 @@ cargo build --release
 ```
 
 CI runs the same formatting, test, lint, and release build checks on every push and pull request.
+
+Publish a GitHub release after updating `Cargo.toml` and `Cargo.lock` to the desired version:
+
+```bash
+./publish.sh             # uses Cargo.toml version
+./publish.sh 0.1.0       # must match Cargo.toml
+```
+
+Requires Cargo, Rust, and an authenticated GitHub CLI (`gh`). The script builds for the current machine and uploads `target/archive/ssh-mgr-vX.Y.Z-<os>-<arch>.tar.gz`, containing the binary, installer, and examples. Supported platform labels are `macos`/`linux` and `aarch64`/`x86_64`; each release contains only the platform built on the publishing machine. Linux binaries require a compatible system runtime.
 
 ## Contributing
 
