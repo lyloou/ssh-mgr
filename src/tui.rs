@@ -65,9 +65,36 @@ fn run_app<B: Backend>(
                     query.clear();
                     selected = 0;
                 }
+                (KeyCode::Enter, _, true, false) => {
+                    searching = false;
+                }
                 (KeyCode::Backspace, _, true, false) => {
                     query.pop();
                     selected = 0;
+                }
+                (KeyCode::Down, _, true, false) | (KeyCode::Char('j'), _, true, false) => {
+                    if selected + 1 < rows.len() {
+                        selected += 1;
+                    }
+                }
+                (KeyCode::Up, _, true, false) | (KeyCode::Char('k'), _, true, false) => {
+                    selected = selected.saturating_sub(1);
+                }
+                (KeyCode::Char('o'), _, true, false) => {
+                    if let Some(Row::Server(server)) = rows.get(selected) {
+                        if let Err(error) = launch_ssh(server, false) {
+                            status = format!("SSH failed: {error}");
+                        }
+                        terminal.clear()?;
+                    }
+                }
+                (KeyCode::Char('O'), _, true, false) => {
+                    if let Some(Row::Server(server)) = rows.get(selected) {
+                        if let Err(error) = launch_ssh(server, true) {
+                            status = format!("SSH failed: {error}");
+                        }
+                        terminal.clear()?;
+                    }
                 }
                 (KeyCode::Char(c), _, true, false) => {
                     query.push(c);
