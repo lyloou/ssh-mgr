@@ -46,6 +46,34 @@ ssh-mgr --config ./examples/config
 
 The default configuration directory is `~/.config/ssh-mgr/`. It is created from the bundled examples on first launch only when it does not already exist.
 
+## Screenshots
+
+The screenshots below were captured from the release binary running in Ghostty with the bundled example configuration.
+
+### Dashboard
+
+![ssh-mgr dashboard in Ghostty](docs/screenshots/ghostty-dashboard.png)
+
+The dashboard keeps the server tree, selected node details, action hints, and tmux context visible at the same time.
+
+### Search
+
+![ssh-mgr search in Ghostty](docs/screenshots/ghostty-search.png)
+
+Search narrows the tree while preserving group context. Press `Enter` to confirm the filter, then use `o` or `O` on the selected server.
+
+### Tree Navigation
+
+![ssh-mgr collapsed group in Ghostty](docs/screenshots/ghostty-collapse.png)
+
+The left and right arrow keys collapse or expand the selected group without losing the group row.
+
+### Help
+
+![ssh-mgr help overlay in Ghostty](docs/screenshots/ghostty-help.png)
+
+The help overlay is available with `?` and closes with `Esc`.
+
 ## Configuration
 
 Directories are groups. A TOML file may contain one or more `[[server]]` entries:
