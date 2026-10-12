@@ -1,0 +1,8 @@
+[[server]]
+name = "staging-api"
+host = "staging.example.com"
+user = "deploy"
+description = "预发布 API"
+
+[server.password]
+env = "SSH_MGR_STAGING_PASSWORD"
