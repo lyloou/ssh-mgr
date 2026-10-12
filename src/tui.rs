@@ -17,7 +17,7 @@ use std::{
     fs, io,
     path::{Path, PathBuf},
     process::Command,
-    time::{SystemTime, UNIX_EPOCH},
+    time::{Duration, SystemTime, UNIX_EPOCH},
 };
 
 pub fn run(servers: Vec<Server>, config_dir: PathBuf) -> Result<()> {
@@ -51,6 +51,11 @@ fn run_app<B: Backend>(
             selected = rows.len() - 1;
         }
         terminal.draw(|frame| draw(frame, &rows, selected, &query, searching, &status, help))?;
+        // A detached tmux session can resize during attach without a queued key event.
+        // Draw periodically so Ratatui rechecks the actual terminal size.
+        if !event::poll(Duration::from_millis(100))? {
+            continue;
+        }
         if let Event::Key(KeyEvent {
             code, modifiers, ..
         }) = event::read()?
@@ -79,22 +84,6 @@ fn run_app<B: Backend>(
                 }
                 (KeyCode::Up, _, true, false) => {
                     selected = selected.saturating_sub(1);
-                }
-                (KeyCode::Char('j'), _, true, false) if !query.is_empty() => {
-                    if selected + 1 < rows.len() {
-                        selected += 1;
-                    }
-                }
-                (KeyCode::Char('k'), _, true, false) if !query.is_empty() => {
-                    selected = selected.saturating_sub(1);
-                }
-                (KeyCode::Char('h'), _, true, false) if !query.is_empty() => {
-                    if let Some(group_index) = toggle_group(&rows, selected, &mut collapsed, true) {
-                        selected = group_index;
-                    }
-                }
-                (KeyCode::Char('l'), _, true, false) if !query.is_empty() => {
-                    toggle_group(&rows, selected, &mut collapsed, false);
                 }
                 (KeyCode::Char(c), _, true, false) => {
                     query.push(c);
@@ -298,7 +287,7 @@ fn draw(
         })
         .collect::<Vec<_>>();
     let title = if searching {
-        format!("Search: {}", query)
+        format!("Search: {} · Enter 确认", query)
     } else {
         format!(
             "Servers ({})",

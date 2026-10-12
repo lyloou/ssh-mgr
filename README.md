@@ -62,7 +62,7 @@ The dashboard keeps the server tree, selected node details, action hints, and tm
 
 Search narrows the tree while preserving group context. Press `Enter` to confirm the filter, then use `o` or `O` on the selected server.
 
-While a non-empty filter is active, `j/k` move through the filtered rows and `h/l` collapse or expand the selected group. This keeps result navigation predictable without making a typed `j`, `k`, `h`, or `l` launch an SSH session.
+While typing a search, `j/k/h/l` are ordinary characters in the filter. Press `Enter` to finish typing and keep the filtered results; then `j/k` navigate and `h/l` collapse or expand groups. Press `/` to edit the filter again.
 
 ### Tree Navigation
 
