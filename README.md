@@ -105,6 +105,8 @@ For `env` and `value`, ssh-mgr writes a short lived, mode `0700` askpass helper 
 
 ## Keyboard Controls
 
+The interface is organized as a compact workspace: the top bar shows the active search and tmux context, the left pane is the grouped server tree, the right pane contains details and actions, and the bottom bar reports the latest operation.
+
 | Key | Action |
 | --- | --- |
 | `↑` / `↓`, `j` / `k` | Move through groups and servers |

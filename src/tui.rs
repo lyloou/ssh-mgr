@@ -202,10 +202,50 @@ fn draw(
     status: &str,
     help: bool,
 ) {
+    let page = Layout::default()
+        .direction(Direction::Vertical)
+        .constraints([
+            Constraint::Length(2),
+            Constraint::Min(5),
+            Constraint::Length(1),
+        ])
+        .split(frame.area());
+    let header = if searching {
+        format!(" ssh-mgr  •  tmux: ssh-mgr  •  Search: {}", query)
+    } else if query.is_empty() {
+        format!(
+            " ssh-mgr  •  tmux: ssh-mgr  •  {} servers",
+            rows.iter()
+                .filter(|row| matches!(row, Row::Server(_)))
+                .count()
+        )
+    } else {
+        format!(
+            " ssh-mgr  •  {} matches  •  Search: {}",
+            rows.iter()
+                .filter(|row| matches!(row, Row::Server(_)))
+                .count(),
+            query
+        )
+    };
+    frame.render_widget(
+        Paragraph::new(header)
+            .style(
+                Style::default()
+                    .fg(Color::Cyan)
+                    .add_modifier(Modifier::BOLD),
+            )
+            .block(
+                Block::default()
+                    .borders(Borders::BOTTOM)
+                    .border_style(Style::default().fg(Color::DarkGray)),
+            ),
+        page[0],
+    );
     let areas = Layout::default()
         .direction(Direction::Horizontal)
         .constraints([Constraint::Percentage(45), Constraint::Percentage(55)])
-        .split(frame.area());
+        .split(page[1]);
     let items = rows
         .iter()
         .map(|row| {
@@ -214,16 +254,27 @@ fn draw(
                     name,
                     count,
                     collapsed,
-                } => format!(
-                    "{} {} ({})",
-                    if *collapsed { "▸" } else { "▾" },
-                    name,
-                    count
-                ),
-                Row::Server(server) => format!(
-                    "  {}  {}@{}:{}",
-                    server.name, server.user, server.host, server.port
-                ),
+                } => Line::from(vec![
+                    Span::styled(
+                        if *collapsed { "▸ " } else { "▾ " },
+                        Style::default().fg(Color::Yellow),
+                    ),
+                    Span::styled(
+                        name,
+                        Style::default()
+                            .fg(Color::Cyan)
+                            .add_modifier(Modifier::BOLD),
+                    ),
+                    Span::styled(format!("  {}", count), Style::default().fg(Color::DarkGray)),
+                ]),
+                Row::Server(server) => Line::from(vec![
+                    Span::styled("  ↳ ", Style::default().fg(Color::DarkGray)),
+                    Span::styled(&server.name, Style::default().fg(Color::White)),
+                    Span::styled(
+                        format!("  {}@{}:{}", server.user, server.host, server.port),
+                        Style::default().fg(Color::DarkGray),
+                    ),
+                ]),
             })
         })
         .collect::<Vec<_>>();
@@ -231,7 +282,7 @@ fn draw(
         format!("Search: {}", query)
     } else {
         format!(
-            "Servers ({})  / search  o enter  O background  q quit",
+            "Servers ({})",
             rows.iter()
                 .filter(|row| matches!(row, Row::Server(_)))
                 .count()
@@ -241,8 +292,17 @@ fn draw(
     state.select((!rows.is_empty()).then_some(selected));
     frame.render_stateful_widget(
         List::new(items)
-            .block(Block::default().title(title).borders(Borders::ALL))
-            .highlight_style(Style::default().bg(Color::Blue)),
+            .block(
+                Block::default()
+                    .title(title)
+                    .borders(Borders::ALL)
+                    .border_style(Style::default().fg(Color::DarkGray)),
+            )
+            .highlight_style(
+                Style::default()
+                    .bg(Color::Rgb(38, 72, 120))
+                    .fg(Color::White),
+            ),
         areas[0],
         &mut state,
     );
@@ -311,19 +371,21 @@ fn draw(
         Paragraph::new(help_text).block(Block::default().title("操作").borders(Borders::ALL)),
         right_areas[1],
     );
-    if !status.is_empty() {
-        frame.render_widget(
-            Paragraph::new(status.to_string()).style(Style::default().fg(Color::Yellow)),
-            Rect::new(
-                1,
-                frame.area().height.saturating_sub(1),
-                frame.area().width.saturating_sub(2),
-                1,
-            ),
-        );
-    }
+    let footer = if status.is_empty() {
+        " ↑/↓ move  ←/→ group  o enter  O background  / search  ? help  q quit".to_string()
+    } else {
+        format!(" {}", status)
+    };
+    frame.render_widget(
+        Paragraph::new(footer).style(Style::default().fg(if status.is_empty() {
+            Color::DarkGray
+        } else {
+            Color::Yellow
+        })),
+        page[2],
+    );
     if help {
-        let area = centered_rect(70, 70, frame.area());
+        let area = centered_rect(70, 70, page[1]);
         frame.render_widget(Clear, area);
         frame.render_widget(
             Paragraph::new("↑/↓  移动\n←/→  折叠或展开分组\no  进入 SSH\nO  后台打开 SSH\nEnter  确认搜索 / 进入 SSH\n/  搜索\nEsc  清除搜索或返回\nr  重新扫描配置\nq  退出\n?  关闭帮助")
