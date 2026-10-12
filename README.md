@@ -62,7 +62,7 @@ The default configuration directory is `~/.config/ssh-mgr/`. It is created from 
 
 ## Screenshots
 
-These screenshots show the previous UI, before the localization update. They were captured from the release binary running in Ghostty with the bundled example configuration.
+These screenshots were refreshed on 2026-10-12 from the release binary running in Ghostty with the bundled example configuration and `--lang en`. They show the current localized UI and keyboard shortcuts.
 
 ### Dashboard
 
