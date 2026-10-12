@@ -93,10 +93,12 @@ fn run_app<B: Backend>(
                     selected = selected.saturating_sub(1);
                 }
                 (KeyCode::Left, _, false, false) => {
-                    toggle_group(&rows, selected, &mut collapsed, true)
+                    if let Some(group_index) = toggle_group(&rows, selected, &mut collapsed, true) {
+                        selected = group_index;
+                    }
                 }
                 (KeyCode::Right, _, false, false) => {
-                    toggle_group(&rows, selected, &mut collapsed, false)
+                    toggle_group(&rows, selected, &mut collapsed, false);
                 }
                 (KeyCode::Char('r'), _, false, false) => match scan(&config_dir) {
                     Ok(updated) => {
@@ -177,19 +179,20 @@ fn toggle_group(
     selected: usize,
     collapsed: &mut HashSet<String>,
     collapse: bool,
-) {
+) -> Option<usize> {
     let group = match rows.get(selected) {
-        Some(Row::Group { name, .. }) => Some(name.clone()),
-        Some(Row::Server(server)) => Some(server.group.clone()),
-        None => None,
+        Some(Row::Group { name, .. }) => name.clone(),
+        Some(Row::Server(server)) => server.group.clone(),
+        None => return None,
     };
-    if let Some(group) = group {
-        if collapse {
-            collapsed.insert(group);
-        } else {
-            collapsed.remove(&group);
-        }
+    if collapse {
+        collapsed.insert(group.clone());
+        return rows
+            .iter()
+            .position(|row| matches!(row, Row::Group { name, .. } if name == &group));
     }
+    collapsed.remove(&group);
+    None
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -566,7 +569,7 @@ fn shellexpand(path: &str) -> String {
 
 #[cfg(test)]
 mod tests {
-    use super::{visible_rows, Row};
+    use super::{toggle_group, visible_rows, Row};
     use crate::config::model::Server;
     use std::{collections::HashSet, path::PathBuf};
 
@@ -615,5 +618,15 @@ mod tests {
         let script = std::fs::read_to_string(&wrapper).unwrap();
         assert!(!script.contains("secret-value"));
         std::fs::remove_dir_all(wrapper.parent().unwrap()).unwrap();
+    }
+
+    #[test]
+    fn collapsing_a_child_returns_its_group_row() {
+        let servers = vec![server("prod", "api"), server("prod", "db")];
+        let mut collapsed = HashSet::new();
+        let rows = visible_rows(&servers, "", &collapsed);
+        let group_index = toggle_group(&rows, 2, &mut collapsed, true);
+        assert_eq!(group_index, Some(0));
+        assert!(collapsed.contains("prod"));
     }
 }
