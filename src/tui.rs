@@ -1,3 +1,4 @@
+use crate::i18n::text as tr;
 use crate::{
     config::{model::Server, scanner::scan},
     search,
@@ -237,7 +238,7 @@ fn draw(
         )
     };
     frame.render_widget(
-        Paragraph::new(header)
+        Paragraph::new(tr(&header))
             .style(
                 Style::default()
                     .fg(Color::Cyan)
@@ -302,7 +303,7 @@ fn draw(
         List::new(items)
             .block(
                 Block::default()
-                    .title(title)
+                    .title(tr(&title))
                     .borders(Borders::ALL)
                     .border_style(Style::default().fg(Color::DarkGray)),
             )
@@ -316,7 +317,7 @@ fn draw(
     );
     let right_areas = Layout::default()
         .direction(Direction::Vertical)
-        .constraints([Constraint::Min(8), Constraint::Length(10)])
+        .constraints([Constraint::Min(8), Constraint::Length(12)])
         .split(areas[1]);
     if let Some(Row::Server(server)) = rows.get(selected) {
         let auth = server
@@ -346,9 +347,9 @@ fn draw(
             server.source.display()
         );
         frame.render_widget(
-            Paragraph::new(text)
+            Paragraph::new(tr(&text))
                 .wrap(Wrap { trim: false })
-                .block(Block::default().title("Details").borders(Borders::ALL)),
+                .block(Block::default().title(tr("Details")).borders(Borders::ALL)),
             right_areas[0],
         );
     } else if let Some(Row::Group {
@@ -358,25 +359,26 @@ fn draw(
     }) = rows.get(selected)
     {
         frame.render_widget(
-            Paragraph::new(format!(
+            Paragraph::new(tr(&format!(
                 "Group: {}\nServers shown: {}\nState: {}",
                 name,
                 count,
                 if *collapsed { "collapsed" } else { "expanded" }
-            ))
-            .block(Block::default().title("Details").borders(Borders::ALL)),
+            )))
+            .block(Block::default().title(tr("Details")).borders(Borders::ALL)),
             right_areas[0],
         );
     } else {
         frame.render_widget(
-            Paragraph::new("No server selected")
-                .block(Block::default().title("Details").borders(Borders::ALL)),
+            Paragraph::new(tr("No server selected"))
+                .block(Block::default().title(tr("Details")).borders(Borders::ALL)),
             right_areas[0],
         );
     }
     let help_text = "↑/↓、j/k  移动\n←/→、h/l  折叠或展开分组\no  进入 SSH\nO  后台打开 SSH\nEnter  确认搜索 / 进入 SSH\n/  搜索\nEsc  清除搜索或返回\nr  重新扫描配置\nq  退出\n?  显示快捷键";
     frame.render_widget(
-        Paragraph::new(help_text).block(Block::default().title("操作").borders(Borders::ALL)),
+        Paragraph::new(tr(help_text))
+            .block(Block::default().title(tr("操作")).borders(Borders::ALL)),
         right_areas[1],
     );
     let footer = if status.is_empty() {
@@ -385,7 +387,7 @@ fn draw(
         format!(" {}", status)
     };
     frame.render_widget(
-        Paragraph::new(footer).style(Style::default().fg(if status.is_empty() {
+        Paragraph::new(tr(&footer)).style(Style::default().fg(if status.is_empty() {
             Color::DarkGray
         } else {
             Color::Yellow
@@ -396,8 +398,8 @@ fn draw(
         let area = centered_rect(70, 70, page[1]);
         frame.render_widget(Clear, area);
         frame.render_widget(
-            Paragraph::new("↑/↓、j/k  移动\n←/→、h/l  折叠或展开分组\no  进入 SSH\nO  后台打开 SSH\nEnter  确认搜索 / 进入 SSH\n/  搜索\nEsc  清除搜索或返回\nr  重新扫描配置\nq  退出\n?  关闭帮助")
-                .block(Block::default().title("快捷键").borders(Borders::ALL))
+            Paragraph::new(tr("↑/↓、j/k  移动\n←/→、h/l  折叠或展开分组\no  进入 SSH\nO  后台打开 SSH\nEnter  确认搜索 / 进入 SSH\n/  搜索\nEsc  清除搜索或返回\nr  重新扫描配置\nq  退出\n?  关闭帮助"))
+                .block(Block::default().title(tr("快捷键")).borders(Borders::ALL))
                 .wrap(Wrap { trim: false }),
             area,
         );

@@ -12,6 +12,7 @@ categories = ["command-line-utilities"]
 anyhow = "1"
 crossterm = "0.28"
 dirs = "5"
+dotenvy = "0.15"
 ratatui = "0.29"
 serde = { version = "1", features = ["derive"] }
 toml = "0.8"

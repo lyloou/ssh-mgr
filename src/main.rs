@@ -1,4 +1,6 @@
 mod config;
+mod env_file;
+mod i18n;
 mod search;
 mod tui;
 
@@ -14,6 +16,8 @@ fn main() -> Result<()> {
     if handle_meta_args() {
         return Ok(());
     }
+    env_file::load_default()?;
+    i18n::initialize()?;
     ensure_tmux_session()?;
     let config_dir = parse_config_dir()?;
     if is_default_config_dir() {
@@ -32,7 +36,7 @@ fn handle_meta_args() -> bool {
         }
         Some("--help") | Some("-h") => {
             println!(
-                "ssh-mgr - keyboard-driven SSH manager\n\nUsage:\n  ssh-mgr [--config PATH]\n\nOptions:\n  -c, --config PATH  scan a specific configuration directory\n  -h, --help         show this help\n  -V, --version      show the version\n\nThe default configuration directory is ~/.config/ssh-mgr/."
+                "ssh-mgr - keyboard-driven SSH manager\n\nUsage:\n  ssh-mgr [--config PATH] [--lang en|zh]\n\nOptions:\n  -c, --config PATH  scan a specific configuration directory\n      --lang en|zh    UI language (default: en)\n  -h, --help         show this help\n  -V, --version      show the version\n\nThe default configuration directory is ~/.config/ssh-mgr/."
             );
             true
         }
@@ -111,14 +115,22 @@ fn initialize_default_config(config_dir: &Path) -> Result<()> {
 
 fn parse_config_dir() -> Result<PathBuf> {
     let mut args = std::env::args_os().skip(1);
-    if let Some(flag) = args.next() {
+    let mut directory = None;
+    while let Some(flag) = args.next() {
         if flag == "--config" || flag == "-c" {
-            return args
-                .next()
-                .map(PathBuf::from)
-                .ok_or_else(|| anyhow::anyhow!("--config requires a directory"));
+            directory =
+                Some(PathBuf::from(args.next().ok_or_else(|| {
+                    anyhow::anyhow!("--config requires a directory")
+                })?));
+        } else if flag == "--lang" {
+            args.next()
+                .ok_or_else(|| anyhow::anyhow!("--lang requires en or zh"))?;
+        } else {
+            anyhow::bail!("unknown argument: {:?}", flag);
         }
-        anyhow::bail!("unknown argument: {:?}", flag);
+    }
+    if let Some(directory) = directory {
+        return Ok(directory);
     }
     Ok(dirs::home_dir()
         .unwrap_or_else(|| PathBuf::from("."))

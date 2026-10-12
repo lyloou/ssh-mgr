@@ -1,5 +1,7 @@
 # ssh-mgr
 
+English | [简体中文](README-ZH.md)
+
 **A keyboard driven SSH manager for tmux and terminal workflows.**
 
 `ssh-mgr` turns a directory of small TOML files into a fast, searchable server tree. It launches the system OpenSSH client inside tmux, so interactive programs such as `vim`, `top`, and shells behave exactly as they do outside the manager.
@@ -48,7 +50,7 @@ The default configuration directory is `~/.config/ssh-mgr/`. It is created from 
 
 ## Screenshots
 
-The screenshots below were captured from the release binary running in Ghostty with the bundled example configuration.
+These screenshots show the previous UI, before the localization update. They were captured from the release binary running in Ghostty with the bundled example configuration.
 
 ### Dashboard
 
@@ -75,6 +77,14 @@ The left and right arrow keys collapse or expand the selected group without losi
 ![ssh-mgr help overlay in Ghostty](docs/screenshots/ghostty-help.png)
 
 The help overlay is available with `?` and closes with `Esc`.
+
+## Language
+
+Use `--lang en` (default) or `--lang zh`. `SSH_MGR_LANG` also selects the language; the CLI option takes precedence. Restart an existing manager window to apply the selection.
+
+```bash
+ssh-mgr --lang zh --config ./examples/config
+```
 
 ## Configuration
 
@@ -132,6 +142,25 @@ value = "example-password"
 ```
 
 For `env` and `value`, ssh-mgr writes a short lived, mode `0700` askpass helper in the system temporary directory. The password is not placed in the SSH command line, tmux window name, or application logs. The helper directory is removed when the SSH process exits.
+
+## Local Environment File
+
+At startup, ssh-mgr optionally loads `~/.config/ssh-mgr/env`, including when using `--config`. Existing process environment variables take precedence. The file is read again when the TUI starts inside tmux, so it also works with an existing tmux server. Restart the manager after changing this file; `r` reloads TOML only.
+
+```dotenv
+# ~/.config/ssh-mgr/env
+SSH_MGR_PROD_PASSWORD='your password'
+SSH_MGR_LANG=zh
+```
+
+Reference a variable in TOML:
+
+```toml
+[server.password]
+env = "SSH_MGR_PROD_PASSWORD"
+```
+
+The optional file supports dotenv syntax, including comments, quoted values, and `export NAME=value`. It is parsed as data, not executed as a shell script. Protect credentials with `chmod 600 ~/.config/ssh-mgr/env`; do not commit this file. Malformed input fails startup without printing its contents.
 
 ## Keyboard Controls
 
