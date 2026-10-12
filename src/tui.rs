@@ -46,12 +46,25 @@ fn run_app<B: Backend>(
     let mut help = false;
     let mut collapsed = HashSet::new();
     let mut status = String::new();
+    let mut list_state = ListState::default();
+    let mut page_height = 1;
+    let mut pending_g = false;
     loop {
         let rows = visible_rows(&servers, &query, &collapsed);
-        if selected >= rows.len() && !rows.is_empty() {
-            selected = rows.len() - 1;
-        }
-        terminal.draw(|frame| draw(frame, &rows, selected, &query, searching, &status, help))?;
+        selected = selected.min(rows.len().saturating_sub(1));
+        terminal.draw(|frame| {
+            draw(
+                frame,
+                &rows,
+                selected,
+                &query,
+                searching,
+                &status,
+                help,
+                &mut list_state,
+                &mut page_height,
+            )
+        })?;
         // A detached tmux session can resize during attach without a queued key event.
         // Draw periodically so Ratatui rechecks the actual terminal size.
         if !event::poll(Duration::from_millis(100))? {
@@ -61,7 +74,25 @@ fn run_app<B: Backend>(
             code, modifiers, ..
         }) = event::read()?
         {
+            if !help {
+                if let Some(next) =
+                    page_selection(code, modifiers, selected, rows.len(), page_height)
+                {
+                    selected = next;
+                    pending_g = false;
+                    continue;
+                }
+            }
+            if !searching && !help && code == KeyCode::Char('g') && modifiers.is_empty() {
+                if pending_g {
+                    selected = 0;
+                }
+                pending_g = !pending_g;
+                continue;
+            }
+            pending_g = false;
             match (code, modifiers, searching, help) {
+                (KeyCode::Char('G'), _, false, false) => selected = rows.len().saturating_sub(1),
                 (KeyCode::Char('q'), _, false, false) => break,
                 (KeyCode::Char('/'), _, false, false) => searching = true,
                 (KeyCode::Char('?'), _, false, false) => help = true,
@@ -114,6 +145,33 @@ fn run_app<B: Backend>(
                     }
                     Err(error) => status = format!("Reload failed: {error}"),
                 },
+                (KeyCode::Char(action @ ('e' | 'a')), _, false, false) => {
+                    let path = if action == 'e' {
+                        match rows.get(selected) {
+                            Some(Row::Server(server)) => Ok(server.source.clone()),
+                            _ => Err(anyhow::anyhow!("Select a server to edit")),
+                        }
+                    } else {
+                        let group = match rows.get(selected) {
+                            Some(Row::Group { name, .. }) => Some(name.as_str()),
+                            Some(Row::Server(server)) => Some(server.group.as_str()),
+                            None => None,
+                        };
+                        create_server_file(&config_dir, group)
+                    };
+                    match path.and_then(|path| edit_config(&path)) {
+                        Ok(()) => match scan(&config_dir) {
+                            Ok(updated) => {
+                                servers = updated;
+                                selected = 0;
+                                status = format!("Reloaded {} servers", servers.len());
+                            }
+                            Err(error) => status = format!("Reload failed: {error}"),
+                        },
+                        Err(error) => status = error.to_string(),
+                    }
+                    terminal.clear()?;
+                }
                 (KeyCode::Char('o'), _, false, false) => {
                     if let Some(Row::Server(server)) = rows.get(selected) {
                         if let Err(error) = launch_ssh(server, false) {
@@ -153,6 +211,37 @@ enum Row<'a> {
         collapsed: bool,
     },
     Server(&'a Server),
+}
+
+fn page_selection(
+    code: KeyCode,
+    modifiers: KeyModifiers,
+    selected: usize,
+    length: usize,
+    height: usize,
+) -> Option<usize> {
+    let height = height.max(1);
+    let (down, step) = match code {
+        KeyCode::PageDown => (true, height),
+        KeyCode::PageUp => (false, height),
+        KeyCode::Char('f') if modifiers.contains(KeyModifiers::CONTROL) => (true, height),
+        KeyCode::Char('b') if modifiers.contains(KeyModifiers::CONTROL) => (false, height),
+        KeyCode::Char('d') if modifiers.contains(KeyModifiers::CONTROL) => {
+            (true, (height / 2).max(1))
+        }
+        KeyCode::Char('u') if modifiers.contains(KeyModifiers::CONTROL) => {
+            (false, (height / 2).max(1))
+        }
+        _ => return None,
+    };
+    Some(
+        if down {
+            selected.saturating_add(step)
+        } else {
+            selected.saturating_sub(step)
+        }
+        .min(length.saturating_sub(1)),
+    )
 }
 
 fn visible_rows<'a>(
@@ -210,6 +299,8 @@ fn draw(
     searching: bool,
     status: &str,
     help: bool,
+    state: &mut ListState,
+    page_height: &mut usize,
 ) {
     let page = Layout::default()
         .direction(Direction::Vertical)
@@ -297,7 +388,7 @@ fn draw(
                 .count()
         )
     };
-    let mut state = ListState::default();
+    *page_height = usize::from(areas[0].height.saturating_sub(2)).max(1);
     state.select((!rows.is_empty()).then_some(selected));
     frame.render_stateful_widget(
         List::new(items)
@@ -313,11 +404,11 @@ fn draw(
                     .fg(Color::White),
             ),
         areas[0],
-        &mut state,
+        state,
     );
     let right_areas = Layout::default()
         .direction(Direction::Vertical)
-        .constraints([Constraint::Min(8), Constraint::Length(12)])
+        .constraints([Constraint::Min(8), Constraint::Length(17)])
         .split(areas[1]);
     if let Some(Row::Server(server)) = rows.get(selected) {
         let auth = server
@@ -375,7 +466,7 @@ fn draw(
             right_areas[0],
         );
     }
-    let help_text = "↑/↓、j/k  移动\n←/→、h/l  折叠或展开分组\no  进入 SSH\nO  后台打开 SSH\nEnter  确认搜索 / 进入 SSH\n/  搜索\nEsc  清除搜索或返回\nr  重新扫描配置\nq  退出\n?  显示快捷键";
+    let help_text = "↑/↓、j/k  移动\n←/→、h/l  折叠或展开分组\nCtrl-f/b  整页翻动\nCtrl-d/u  半页翻动\ngg / G  首行 / 末行\no  进入 SSH\nO  后台打开 SSH\nEnter  确认搜索 / 进入 SSH\n/  搜索\nEsc  清除搜索或返回\nr  重新扫描配置\ne  Vim 编辑配置\na  新增服务器\nq  退出\n?  显示快捷键";
     frame.render_widget(
         Paragraph::new(tr(help_text))
             .block(Block::default().title(tr("操作")).borders(Borders::ALL)),
@@ -398,7 +489,7 @@ fn draw(
         let area = centered_rect(70, 70, page[1]);
         frame.render_widget(Clear, area);
         frame.render_widget(
-            Paragraph::new(tr("↑/↓、j/k  移动\n←/→、h/l  折叠或展开分组\no  进入 SSH\nO  后台打开 SSH\nEnter  确认搜索 / 进入 SSH\n/  搜索\nEsc  清除搜索或返回\nr  重新扫描配置\nq  退出\n?  关闭帮助"))
+            Paragraph::new(tr("↑/↓、j/k  移动\n←/→、h/l  折叠或展开分组\nCtrl-f/b  整页翻动\nCtrl-d/u  半页翻动\ngg / G  首行 / 末行\no  进入 SSH\nO  后台打开 SSH\nEnter  确认搜索 / 进入 SSH\n/  搜索\nEsc  清除搜索或返回\nr  重新扫描配置\ne  Vim 编辑配置\na  新增服务器\nq  退出\n?  关闭帮助"))
                 .block(Block::default().title(tr("快捷键")).borders(Borders::ALL))
                 .wrap(Wrap { trim: false }),
             area,
@@ -423,6 +514,36 @@ fn centered_rect(percent_x: u16, percent_y: u16, area: Rect) -> Rect {
             Constraint::Percentage((100 - percent_x) / 2),
         ])
         .split(vertical[1])[1]
+}
+
+fn create_server_file(config_dir: &Path, group: Option<&str>) -> Result<PathBuf> {
+    use std::io::Write;
+    let directory = match group {
+        Some(group) => config_dir.join(group),
+        None => config_dir.to_path_buf(),
+    };
+    fs::create_dir_all(&directory)?;
+    let id = SystemTime::now().duration_since(UNIX_EPOCH)?.as_nanos();
+    let path = directory.join(format!("server-{id}.toml"));
+    let mut file = fs::OpenOptions::new()
+        .write(true)
+        .create_new(true)
+        .open(&path)?;
+    file.write_all(b"# Replace the example fields before connecting.\n[[server]]\nname = \"new-server\"\nhost = \"server.example.com\"\nport = 22\nuser = \"deploy\"\ndescription = \"\"\n\n[server.password]\nprompt = true\n")?;
+    Ok(path)
+}
+
+fn edit_config(path: &Path) -> Result<()> {
+    disable_raw_mode()?;
+    execute!(io::stdout(), crossterm::cursor::Show, LeaveAlternateScreen)?;
+    let result = Command::new("vim").arg("--").arg(path).status();
+    enable_raw_mode()?;
+    execute!(io::stdout(), EnterAlternateScreen, crossterm::cursor::Hide)?;
+    let status = result.map_err(|error| anyhow::anyhow!("Unable to start vim: {error}"))?;
+    if !status.success() {
+        anyhow::bail!("Vim exited with {status}");
+    }
+    Ok(())
 }
 
 fn launch_ssh(server: &Server, background: bool) -> Result<()> {
@@ -576,6 +697,101 @@ fn shellexpand(path: &str) -> String {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn page_navigation_clamps_to_filtered_list_boundaries() {
+        use super::{page_selection, KeyCode, KeyModifiers};
+        assert_eq!(
+            page_selection(KeyCode::Char('f'), KeyModifiers::CONTROL, 0, 50, 10),
+            Some(10)
+        );
+        assert_eq!(
+            page_selection(KeyCode::Char('d'), KeyModifiers::CONTROL, 10, 50, 10),
+            Some(15)
+        );
+        assert_eq!(
+            page_selection(KeyCode::Char('u'), KeyModifiers::CONTROL, 15, 50, 10),
+            Some(10)
+        );
+        assert_eq!(
+            page_selection(KeyCode::Char('b'), KeyModifiers::CONTROL, 3, 50, 10),
+            Some(0)
+        );
+        assert_eq!(
+            page_selection(KeyCode::PageDown, KeyModifiers::NONE, 0, 3, 10),
+            Some(2)
+        );
+        assert_eq!(
+            page_selection(KeyCode::PageUp, KeyModifiers::NONE, 0, 0, 0),
+            Some(0)
+        );
+        assert_eq!(
+            page_selection(KeyCode::Char('f'), KeyModifiers::NONE, 0, 50, 10),
+            None
+        );
+    }
+
+    #[test]
+    fn rendering_scrolls_to_selection_and_preserves_offset() {
+        let servers: Vec<_> = (0..50)
+            .map(|i| server("prod", &format!("server-{i}")))
+            .collect();
+        let rows = visible_rows(&servers, "", &HashSet::new());
+        let mut terminal =
+            ratatui::Terminal::new(ratatui::backend::TestBackend::new(100, 30)).unwrap();
+        let mut state = ratatui::widgets::ListState::default();
+        let mut height = 0;
+        terminal
+            .draw(|frame| {
+                super::draw(
+                    frame,
+                    &rows,
+                    40,
+                    "",
+                    false,
+                    "",
+                    false,
+                    &mut state,
+                    &mut height,
+                )
+            })
+            .unwrap();
+        assert!(state.offset() > 0);
+        assert!(40 >= state.offset() && 40 < state.offset() + height);
+        let offset = state.offset();
+        terminal
+            .draw(|frame| {
+                super::draw(
+                    frame,
+                    &rows,
+                    40,
+                    "",
+                    false,
+                    "",
+                    false,
+                    &mut state,
+                    &mut height,
+                )
+            })
+            .unwrap();
+        assert_eq!(state.offset(), offset);
+    }
+    #[test]
+    fn adding_servers_creates_distinct_valid_files_in_group() {
+        let root = std::env::temp_dir().join(format!(
+            "ssh-mgr-add-{}",
+            super::SystemTime::now()
+                .duration_since(super::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
+        let first = super::create_server_file(&root, Some("prod")).unwrap();
+        let second = super::create_server_file(&root, Some("prod")).unwrap();
+        assert_ne!(first, second);
+        let servers = super::scan(&root).unwrap();
+        assert_eq!(servers.len(), 2);
+        assert!(servers.iter().all(|server| server.group == "prod"));
+        std::fs::remove_dir_all(root).unwrap();
+    }
     use super::{toggle_group, visible_rows, Row};
     use crate::config::model::Server;
     use std::{collections::HashSet, path::PathBuf};

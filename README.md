@@ -181,6 +181,9 @@ The interface is organized as a compact workspace: the top bar shows the active 
 | Key | Action |
 | --- | --- |
 | `↑` / `↓`, `j` / `k` | Move through groups and servers |
+| `Ctrl-f` / `Ctrl-b`, `PageDown` / `PageUp` | Move one visible page down / up |
+| `Ctrl-d` / `Ctrl-u` | Move half a visible page down / up |
+| `gg` / `G` | Jump to the first / last row after confirming search |
 | `←`, `h` | Collapse the selected group |
 | `→`, `l` | Expand the selected group |
 | `o` | Enter SSH in a new tmux window |
@@ -189,6 +192,8 @@ The interface is organized as a compact workspace: the top bar shows the active 
 | `/` | Start fuzzy search |
 | `Esc` | Clear search or close help |
 | `r` | Rescan the configuration directory |
+| `e` | Edit the selected server's TOML file in Vim |
+| `a` | Create a TOML template in the selected group and open Vim |
 | `?` | Show the help overlay |
 | `q` | Quit |
 
