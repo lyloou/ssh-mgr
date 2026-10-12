@@ -1,44 +1,155 @@
 # ssh-mgr
 
-Terminal SSH manager with folder-based groups and fuzzy search.
+**A keyboard driven SSH manager for tmux and terminal workflows.**
 
-## Run
+`ssh-mgr` turns a directory of small TOML files into a fast, searchable server tree. It launches the system OpenSSH client inside tmux, so interactive programs such as `vim`, `top`, and shells behave exactly as they do outside the manager.
+
+## Why ssh-mgr
+
+- Folder based groups that stay readable in Git.
+- Fuzzy, letter by letter search across names, groups, hosts, users, descriptions, tags, and source paths.
+- Native `ssh` inside tmux windows. No custom terminal emulator and no PTY translation layer.
+- `o` for a foreground SSH window and `O` for a background SSH window.
+- Password sources for environment variables, one time prompts, private keys, and explicit TOML values.
+- Safe startup: missing default configuration is initialized with examples; existing files are never overwritten.
+
+## Requirements
+
+- Rust stable for building
+- OpenSSH (`ssh`) on `PATH`
+- tmux (`tmux`) on `PATH`
+
+On macOS with Homebrew:
 
 ```bash
-cargo run -- --config ./examples/config
+brew install tmux
 ```
 
-SSH sessions are launched by the system `ssh` command inside tmux windows. Running the binary outside tmux automatically creates or attaches to the fixed `ssh-mgr` session and runs the TUI in the `ssh-mgr` window:
+## Install And Run
+
+Build from source:
 
 ```bash
-tmux new-session -A -s ssh-mgr ./target/release/ssh-mgr
+cargo build --release
+./target/release/ssh-mgr
 ```
 
-`o` creates and switches to an SSH window. `O` creates an SSH window in the background and keeps the TUI active. `Enter` remains as an alias for foreground SSH. The TUI always remains in the `ssh-mgr` window.
+The binary automatically creates or attaches to the fixed tmux session `ssh-mgr` and runs the TUI in the `ssh-mgr` window. SSH connections become sibling windows in that session.
 
-Without `--config`, the application scans `~/.config/ssh-mgr/` recursively for `.toml` files. If that directory does not exist, the bundled example configuration is copied there once. Existing files are never overwritten. Each directory is a group and each file may contain one or more `[[server]]` entries.
+Useful commands:
+
+```bash
+ssh-mgr --help
+ssh-mgr --version
+ssh-mgr --config ./examples/config
+```
+
+The default configuration directory is `~/.config/ssh-mgr/`. It is created from the bundled examples on first launch only when it does not already exist.
 
 ## Configuration
 
-Authentication is unified under `[server.password]`:
+Directories are groups. A TOML file may contain one or more `[[server]]` entries:
+
+```text
+~/.config/ssh-mgr/
+├── production/
+│   └── api.toml
+└── staging/
+    └── api.toml
+```
+
+Example:
 
 ```toml
+[[server]]
+name = "prod-api-01"
+host = "10.0.0.11"
+port = 22
+user = "ubuntu"
+description = "Production API primary"
+tags = ["production", "api"]
+
 [server.password]
 key = "~/.ssh/id_ed25519"
 ```
 
-Use an environment variable or prompt instead:
+### Authentication
+
+Use exactly one authentication source inside `[server.password]`:
 
 ```toml
+# Private key. OpenSSH handles a key passphrase in the tmux window.
 [server.password]
-env = "SSH_MGR_PASSWORD"
+key = "~/.ssh/id_ed25519"
 ```
 
 ```toml
+# Password from the current process environment.
+[server.password]
+env = "SSH_MGR_PROD_PASSWORD"
+```
+
+```toml
+# OpenSSH prompts interactively in the SSH window.
 [server.password]
 prompt = true
 ```
 
-`value = "..."` is supported for compatibility, but stores a plaintext password and should be avoided for shared configuration.
+```toml
+# Supported, but plaintext. Use only for local, tightly protected files.
+[server.password]
+value = "example-password"
+```
 
-For `env` and `value`, ssh-mgr creates a short-lived `SSH_ASKPASS` helper and passes the password only to the SSH child process. The temporary files are removed when SSH exits. `prompt = true` leaves password prompting to the system SSH client.
+For `env` and `value`, ssh-mgr writes a short lived, mode `0700` askpass helper in the system temporary directory. The password is not placed in the SSH command line, tmux window name, or application logs. The helper directory is removed when the SSH process exits.
+
+## Keyboard Controls
+
+| Key | Action |
+| --- | --- |
+| `↑` / `↓`, `j` / `k` | Move through groups and servers |
+| `←` | Collapse the selected group |
+| `→` | Expand the selected group |
+| `o` | Enter SSH in a new tmux window |
+| `O` | Open SSH in the background and keep the TUI active |
+| `Enter` | Alias for `o` |
+| `/` | Start fuzzy search |
+| `Esc` | Clear search or close help |
+| `r` | Rescan the configuration directory |
+| `?` | Show the help overlay |
+| `q` | Quit |
+
+tmux itself remains available for switching sessions and windows:
+
+```text
+Ctrl-b n       next window
+Ctrl-b p       previous window
+Ctrl-b w       window picker
+```
+
+## Design And Safety Notes
+
+- ssh-mgr delegates terminal behavior to the system OpenSSH client and tmux.
+- It does not write to `~/.ssh/config` or alter private keys.
+- Configuration files are read recursively and never modified by `r`.
+- A malformed file stops the scan with its source path and server name in the error.
+- The `value` mode is intentionally explicit because plaintext credentials can leak through file backups, permissions, or source control.
+
+## Development
+
+```bash
+cargo fmt --all -- --check
+cargo test --all-targets
+cargo clippy --all-targets --all-features -- -D warnings
+cargo build --release
+```
+
+CI runs the same formatting, test, lint, and release build checks on every push and pull request.
+
+## Contributing
+
+Small, focused pull requests are welcome. Please include a regression test for parser, search, or state behavior changes. Do not commit real hosts, credentials, private keys, or generated `target/` files.
+
+## License
+
+MIT. See [LICENSE](LICENSE).

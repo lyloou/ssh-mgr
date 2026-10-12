@@ -7,10 +7,13 @@ use config::scanner::scan;
 use std::{
     fs,
     path::{Path, PathBuf},
-    process::Command,
+    process::{Command, Stdio},
 };
 
 fn main() -> Result<()> {
+    if handle_meta_args() {
+        return Ok(());
+    }
     ensure_tmux_session()?;
     let config_dir = parse_config_dir()?;
     if is_default_config_dir() {
@@ -20,6 +23,23 @@ fn main() -> Result<()> {
     tui::run(servers, config_dir)
 }
 
+fn handle_meta_args() -> bool {
+    let arg = std::env::args().nth(1);
+    match arg.as_deref() {
+        Some("--version") | Some("-V") => {
+            println!("ssh-mgr {}", env!("CARGO_PKG_VERSION"));
+            true
+        }
+        Some("--help") | Some("-h") => {
+            println!(
+                "ssh-mgr - keyboard-driven SSH manager\n\nUsage:\n  ssh-mgr [--config PATH]\n\nOptions:\n  -c, --config PATH  scan a specific configuration directory\n  -h, --help         show this help\n  -V, --version      show the version\n\nThe default configuration directory is ~/.config/ssh-mgr/."
+            );
+            true
+        }
+        _ => false,
+    }
+}
+
 fn ensure_tmux_session() -> Result<()> {
     if std::env::var_os("TMUX").is_some() {
         return Ok(());
@@ -27,8 +47,9 @@ fn ensure_tmux_session() -> Result<()> {
     let executable = std::env::current_exe()?;
     let session_exists = Command::new("tmux")
         .args(["has-session", "-t", "ssh-mgr"])
+        .stderr(Stdio::null())
         .status()
-        .map_err(|error| anyhow::anyhow!("unable to start tmux: {error}"))?
+        .map_err(|error| anyhow::anyhow!("tmux is required but could not be started: {error}"))?
         .success();
     if !session_exists {
         let mut command = Command::new("tmux");

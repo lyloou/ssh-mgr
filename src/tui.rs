@@ -379,11 +379,13 @@ fn build_ssh_wrapper(server: &Server) -> Result<PathBuf> {
         false
     } else if let Some(value) = auth.value {
         fs::write(&password_file, value)?;
+        set_private(&password_file)?;
         true
     } else if let Some(env) = auth.env {
         let value = std::env::var(&env)
             .map_err(|_| anyhow::anyhow!("environment variable {env} is not set"))?;
         fs::write(&password_file, value)?;
+        set_private(&password_file)?;
         true
     } else {
         false
@@ -466,6 +468,15 @@ fn set_executable(path: &PathBuf) -> Result<()> {
     {
         use std::os::unix::fs::PermissionsExt;
         fs::set_permissions(path, fs::Permissions::from_mode(0o700))?;
+    }
+    Ok(())
+}
+
+fn set_private(path: &Path) -> Result<()> {
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        fs::set_permissions(path, fs::Permissions::from_mode(0o600))?;
     }
     Ok(())
 }

@@ -2,6 +2,11 @@
 name = "ssh-mgr"
 version = "0.1.0"
 edition = "2021"
+description = "A keyboard-driven SSH manager for terminal workflows"
+license = "MIT"
+readme = "README.md"
+keywords = ["ssh", "tmux", "tui", "terminal"]
+categories = ["command-line-utilities"]
 
 [dependencies]
 anyhow = "1"

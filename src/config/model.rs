@@ -40,6 +40,41 @@ fn default_port() -> u16 {
 }
 
 impl Server {
+    pub fn validate(&self) -> Result<(), String> {
+        if self.name.trim().is_empty() {
+            return Err("name cannot be empty".into());
+        }
+        if self.host.trim().is_empty() {
+            return Err("host cannot be empty".into());
+        }
+        if self.user.trim().is_empty() {
+            return Err("user cannot be empty".into());
+        }
+        if self.port == 0 {
+            return Err("port must be between 1 and 65535".into());
+        }
+        if let Some(password) = &self.password {
+            let configured = [
+                password.key.is_some(),
+                password.env.is_some(),
+                password.value.is_some(),
+                password.prompt,
+            ]
+            .into_iter()
+            .filter(|configured| *configured)
+            .count();
+            if configured > 1 {
+                return Err("password must use exactly one of key, env, value, or prompt".into());
+            }
+            if let Some(env) = &password.env {
+                if env.trim().is_empty() {
+                    return Err("password.env cannot be empty".into());
+                }
+            }
+        }
+        Ok(())
+    }
+
     pub fn searchable_text(&self) -> String {
         format!(
             "{} {} {} {} {} {}",

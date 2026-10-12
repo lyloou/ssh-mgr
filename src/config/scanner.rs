@@ -26,12 +26,9 @@ pub fn scan(root: &Path) -> Result<Vec<Server>> {
             group.display().to_string()
         };
         for mut server in parsed.server {
-            if server.name.trim().is_empty()
-                || server.host.trim().is_empty()
-                || server.user.trim().is_empty()
-            {
-                anyhow::bail!("{}: server requires name, host and user", file.display());
-            }
+            server.validate().map_err(|error| {
+                anyhow::anyhow!("{}: server '{}': {error}", file.display(), server.name)
+            })?;
             server.group = group.clone();
             server.source = file.clone();
             result.push(server);
@@ -99,6 +96,27 @@ mod tests {
             servers[0].password.as_ref().unwrap().key.as_deref(),
             Some("~/.ssh/id_ed25519")
         );
+        fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn rejects_conflicting_password_sources() {
+        let root = std::env::temp_dir().join(format!(
+            "ssh-mgr-invalid-{}",
+            SystemTime::now()
+                .duration_since(UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
+        fs::create_dir_all(&root).unwrap();
+        fs::write(
+            root.join("invalid.toml"),
+            "[[server]]\nname='bad'\nhost='localhost'\nuser='root'\n[server.password]\nenv='PASSWORD'\nprompt=true\n",
+        )
+        .unwrap();
+        let error = scan(&root).unwrap_err().to_string();
+        assert!(error.contains("invalid.toml"));
+        assert!(error.contains("exactly one"));
         fs::remove_dir_all(root).unwrap();
     }
 }
