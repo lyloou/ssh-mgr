@@ -110,6 +110,14 @@ fn initialize_default_config(config_dir: &Path) -> Result<()> {
         config_dir.join("staging/api.toml"),
         include_str!("../examples/config/staging/api.toml"),
     )?;
+    fs::write(
+        config_dir.join("env.example"),
+        include_str!("../examples/env.example"),
+    )?;
+    fs::write(
+        config_dir.join("Readme.md"),
+        include_str!("../examples/Readme.md"),
+    )?;
     Ok(())
 }
 
@@ -155,10 +163,28 @@ mod tests {
         initialize_default_config(&root).unwrap();
         assert!(root.join("production/api.toml").is_file());
         assert!(root.join("staging/api.toml").is_file());
+        assert_eq!(
+            fs::read_to_string(root.join("env.example")).unwrap(),
+            include_str!("../examples/env.example")
+        );
+        assert_eq!(
+            fs::read_to_string(root.join("Readme.md")).unwrap(),
+            include_str!("../examples/Readme.md")
+        );
+        fs::write(root.join("env.example"), "custom env").unwrap();
+        fs::write(root.join("Readme.md"), "custom readme").unwrap();
         let existing = root.join("production/api.toml");
         fs::write(&existing, "custom").unwrap();
         initialize_default_config(&root).unwrap();
         assert_eq!(fs::read_to_string(existing).unwrap(), "custom");
+        assert_eq!(
+            fs::read_to_string(root.join("env.example")).unwrap(),
+            "custom env"
+        );
+        assert_eq!(
+            fs::read_to_string(root.join("Readme.md")).unwrap(),
+            "custom readme"
+        );
         fs::remove_dir_all(root).unwrap();
     }
 }
