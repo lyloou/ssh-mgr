@@ -112,7 +112,7 @@ For `env` and `value`, ssh-mgr writes a short lived, mode `0700` askpass helper 
 | `→` | Expand the selected group |
 | `o` | Enter SSH in a new tmux window |
 | `O` | Open SSH in the background and keep the TUI active |
-| `Enter` | Alias for `o` |
+| `Enter` | Confirm search, or alias for `o` in the list |
 | `/` | Start fuzzy search |
 | `Esc` | Clear search or close help |
 | `r` | Rescan the configuration directory |

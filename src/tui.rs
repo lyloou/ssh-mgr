@@ -80,22 +80,6 @@ fn run_app<B: Backend>(
                 (KeyCode::Up, _, true, false) | (KeyCode::Char('k'), _, true, false) => {
                     selected = selected.saturating_sub(1);
                 }
-                (KeyCode::Char('o'), _, true, false) => {
-                    if let Some(Row::Server(server)) = rows.get(selected) {
-                        if let Err(error) = launch_ssh(server, false) {
-                            status = format!("SSH failed: {error}");
-                        }
-                        terminal.clear()?;
-                    }
-                }
-                (KeyCode::Char('O'), _, true, false) => {
-                    if let Some(Row::Server(server)) = rows.get(selected) {
-                        if let Err(error) = launch_ssh(server, true) {
-                            status = format!("SSH failed: {error}");
-                        }
-                        terminal.clear()?;
-                    }
-                }
                 (KeyCode::Char(c), _, true, false) => {
                     query.push(c);
                     selected = 0;
@@ -322,7 +306,7 @@ fn draw(
             right_areas[0],
         );
     }
-    let help_text = "↑/↓  移动\n←/→  折叠或展开分组\no  进入 SSH\nO  后台打开 SSH\nEnter  进入 SSH\n/  搜索\nEsc  清除搜索或返回\nr  重新扫描配置\nq  退出\n?  显示快捷键";
+    let help_text = "↑/↓  移动\n←/→  折叠或展开分组\no  进入 SSH\nO  后台打开 SSH\nEnter  确认搜索 / 进入 SSH\n/  搜索\nEsc  清除搜索或返回\nr  重新扫描配置\nq  退出\n?  显示快捷键";
     frame.render_widget(
         Paragraph::new(help_text).block(Block::default().title("操作").borders(Borders::ALL)),
         right_areas[1],
@@ -342,7 +326,7 @@ fn draw(
         let area = centered_rect(70, 70, frame.area());
         frame.render_widget(Clear, area);
         frame.render_widget(
-            Paragraph::new("↑/↓  移动\n←/→  折叠或展开分组\no  进入 SSH\nO  后台打开 SSH\nEnter  进入 SSH\n/  搜索\nEsc  清除搜索或返回\nr  重新扫描配置\nq  退出\n?  关闭帮助")
+            Paragraph::new("↑/↓  移动\n←/→  折叠或展开分组\no  进入 SSH\nO  后台打开 SSH\nEnter  确认搜索 / 进入 SSH\n/  搜索\nEsc  清除搜索或返回\nr  重新扫描配置\nq  退出\n?  关闭帮助")
                 .block(Block::default().title("快捷键").borders(Borders::ALL))
                 .wrap(Wrap { trim: false }),
             area,
