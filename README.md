@@ -150,6 +150,8 @@ CI runs the same formatting, test, lint, and release build checks on every push 
 
 Small, focused pull requests are welcome. Please include a regression test for parser, search, or state behavior changes. Do not commit real hosts, credentials, private keys, or generated `target/` files.
 
+See [CONTRIBUTING.md](CONTRIBUTING.md) for the local check suite and [SECURITY.md](SECURITY.md) for credential handling and vulnerability reports. Release history is tracked in [CHANGELOG.md](CHANGELOG.md).
+
 ## License
 
 MIT. See [LICENSE](LICENSE).
