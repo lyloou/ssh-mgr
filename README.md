@@ -1,5 +1,7 @@
 # ssh-mgr
 
+![Latest Release](https://img.shields.io/github/v/release/lyloou/ssh-mgr?color=green&label=Latest)
+
 English | [简体中文](README-ZH.md)
 
 **A keyboard driven SSH manager for tmux and terminal workflows.**

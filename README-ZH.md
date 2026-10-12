@@ -1,5 +1,7 @@
 # ssh-mgr
 
+![Latest Release](https://img.shields.io/github/v/release/lyloou/ssh-mgr?color=green&label=Latest)
+
 [English](README.md) | 简体中文
 
 使用 Rust 编写的终端 SSH 管理工具。配置目录形成分组树，通过系统 OpenSSH 和 tmux 打开独立连接窗口。
