@@ -62,6 +62,8 @@ The dashboard keeps the server tree, selected node details, action hints, and tm
 
 Search narrows the tree while preserving group context. Press `Enter` to confirm the filter, then use `o` or `O` on the selected server.
 
+While a non-empty filter is active, `j/k` move through the filtered rows and `h/l` collapse or expand the selected group. This keeps result navigation predictable without making a typed `j`, `k`, `h`, or `l` launch an SSH session.
+
 ### Tree Navigation
 
 ![ssh-mgr collapsed group in Ghostty](docs/screenshots/ghostty-collapse.png)
@@ -138,8 +140,8 @@ The interface is organized as a compact workspace: the top bar shows the active 
 | Key | Action |
 | --- | --- |
 | `↑` / `↓`, `j` / `k` | Move through groups and servers |
-| `←` | Collapse the selected group |
-| `→` | Expand the selected group |
+| `←`, `h` | Collapse the selected group |
+| `→`, `l` | Expand the selected group |
 | `o` | Enter SSH in a new tmux window |
 | `O` | Open SSH in the background and keep the TUI active |
 | `Enter` | Confirm search, or alias for `o` in the list |

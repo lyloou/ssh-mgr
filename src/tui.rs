@@ -72,13 +72,29 @@ fn run_app<B: Backend>(
                     query.pop();
                     selected = 0;
                 }
-                (KeyCode::Down, _, true, false) | (KeyCode::Char('j'), _, true, false) => {
+                (KeyCode::Down, _, true, false) => {
                     if selected + 1 < rows.len() {
                         selected += 1;
                     }
                 }
-                (KeyCode::Up, _, true, false) | (KeyCode::Char('k'), _, true, false) => {
+                (KeyCode::Up, _, true, false) => {
                     selected = selected.saturating_sub(1);
+                }
+                (KeyCode::Char('j'), _, true, false) if !query.is_empty() => {
+                    if selected + 1 < rows.len() {
+                        selected += 1;
+                    }
+                }
+                (KeyCode::Char('k'), _, true, false) if !query.is_empty() => {
+                    selected = selected.saturating_sub(1);
+                }
+                (KeyCode::Char('h'), _, true, false) if !query.is_empty() => {
+                    if let Some(group_index) = toggle_group(&rows, selected, &mut collapsed, true) {
+                        selected = group_index;
+                    }
+                }
+                (KeyCode::Char('l'), _, true, false) if !query.is_empty() => {
+                    toggle_group(&rows, selected, &mut collapsed, false);
                 }
                 (KeyCode::Char(c), _, true, false) => {
                     query.push(c);
@@ -92,12 +108,12 @@ fn run_app<B: Backend>(
                 (KeyCode::Up, _, false, false) | (KeyCode::Char('k'), _, false, false) => {
                     selected = selected.saturating_sub(1);
                 }
-                (KeyCode::Left, _, false, false) => {
+                (KeyCode::Left, _, false, false) | (KeyCode::Char('h'), _, false, false) => {
                     if let Some(group_index) = toggle_group(&rows, selected, &mut collapsed, true) {
                         selected = group_index;
                     }
                 }
-                (KeyCode::Right, _, false, false) => {
+                (KeyCode::Right, _, false, false) | (KeyCode::Char('l'), _, false, false) => {
                     toggle_group(&rows, selected, &mut collapsed, false);
                 }
                 (KeyCode::Char('r'), _, false, false) => match scan(&config_dir) {
@@ -369,13 +385,13 @@ fn draw(
             right_areas[0],
         );
     }
-    let help_text = "↑/↓  移动\n←/→  折叠或展开分组\no  进入 SSH\nO  后台打开 SSH\nEnter  确认搜索 / 进入 SSH\n/  搜索\nEsc  清除搜索或返回\nr  重新扫描配置\nq  退出\n?  显示快捷键";
+    let help_text = "↑/↓、j/k  移动\n←/→、h/l  折叠或展开分组\no  进入 SSH\nO  后台打开 SSH\nEnter  确认搜索 / 进入 SSH\n/  搜索\nEsc  清除搜索或返回\nr  重新扫描配置\nq  退出\n?  显示快捷键";
     frame.render_widget(
         Paragraph::new(help_text).block(Block::default().title("操作").borders(Borders::ALL)),
         right_areas[1],
     );
     let footer = if status.is_empty() {
-        " ↑/↓ move  ←/→ group  o enter  O background  / search  ? help  q quit".to_string()
+        " ↑/↓ j/k move  ←/→ h/l group  o enter  O background  / search  ? help  q quit".to_string()
     } else {
         format!(" {}", status)
     };
@@ -391,7 +407,7 @@ fn draw(
         let area = centered_rect(70, 70, page[1]);
         frame.render_widget(Clear, area);
         frame.render_widget(
-            Paragraph::new("↑/↓  移动\n←/→  折叠或展开分组\no  进入 SSH\nO  后台打开 SSH\nEnter  确认搜索 / 进入 SSH\n/  搜索\nEsc  清除搜索或返回\nr  重新扫描配置\nq  退出\n?  关闭帮助")
+            Paragraph::new("↑/↓、j/k  移动\n←/→、h/l  折叠或展开分组\no  进入 SSH\nO  后台打开 SSH\nEnter  确认搜索 / 进入 SSH\n/  搜索\nEsc  清除搜索或返回\nr  重新扫描配置\nq  退出\n?  关闭帮助")
                 .block(Block::default().title("快捷键").borders(Borders::ALL))
                 .wrap(Wrap { trim: false }),
             area,
