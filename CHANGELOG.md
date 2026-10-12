@@ -7,4 +7,4 @@
 - Added system OpenSSH sessions in a fixed `ssh-mgr` tmux session.
 - Added foreground `o` and background `O` SSH windows.
 - Added key, prompt, environment, and TOML password sources.
-- Added configuration validation, examples, CLI help, CI, and MIT licensing.
+- Added configuration validation, examples, CLI help, CI, and Apache License 2.0 licensing.

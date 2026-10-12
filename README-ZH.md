@@ -112,7 +112,7 @@ cargo clippy --all-targets --all-features -- -D warnings
 cargo build --release
 ```
 
-贡献要求见 [CONTRIBUTING.md](CONTRIBUTING.md)，安全说明见 [SECURITY.md](SECURITY.md)，项目采用 [MIT 许可证](LICENSE)。
+贡献要求见 [CONTRIBUTING.md](CONTRIBUTING.md)，安全说明见 [SECURITY.md](SECURITY.md)，项目采用 [Apache License 2.0](LICENSE) 许可证。
 
 ## 发布
 

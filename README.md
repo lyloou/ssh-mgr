@@ -236,4 +236,4 @@ See [CONTRIBUTING.md](CONTRIBUTING.md) for the local check suite and [SECURITY.m
 
 ## License
 
-MIT. See [LICENSE](LICENSE).
+Apache License 2.0. See [LICENSE](LICENSE).
