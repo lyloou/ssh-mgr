@@ -14,7 +14,11 @@
 
 ```bash
 curl -fsSL https://raw.githubusercontent.com/lyloou/ssh-mgr/main/install.sh | bash
-./install.sh 0.1.0       # 指定版本（在本地仓库内执行）
+```
+
+```bash
+# 或指定版本：
+curl -fsSL https://raw.githubusercontent.com/lyloou/ssh-mgr/main/install.sh | bash -s -- 0.1.0
 ```
 
 二进制安装到 `~/.local/bin`，脚本会幂等添加 PATH 到 `.zshrc` 或 `.bashrc`；重新加载对应配置后即可运行。可通过 `SSH_MGR_INSTALL_DIR` 指定安装目录。

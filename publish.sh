@@ -43,6 +43,7 @@ case "$(uname -m)" in
 esac
 echo "=== ssh-mgr publish v${VERSION} ==="
 HOST_TARGET="$(rustc -vV | sed -n 's/^host: //p')"
+cargo generate-lockfile
 cargo build --release --locked --target "$HOST_TARGET"
 
 BUILD_BINARY="$PROJECT_DIR/target/$HOST_TARGET/release/ssh-mgr"

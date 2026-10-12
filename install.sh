@@ -4,6 +4,7 @@
 # Usage:
 #   ./install.sh [version]
 #   curl -fsSL https://raw.githubusercontent.com/lyloou/ssh-mgr/main/install.sh | bash
+#   curl -fsSL https://raw.githubusercontent.com/lyloou/ssh-mgr/main/install.sh | bash -s -- 0.1.0
 
 set -euo pipefail
 

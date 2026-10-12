@@ -35,8 +35,11 @@ Install a prebuilt release for your OS and CPU architecture (OpenSSH and tmux ar
 
 ```bash
 curl -fsSL https://raw.githubusercontent.com/lyloou/ssh-mgr/main/install.sh | bash
+```
+
+```bash
 # Or select a version:
-./install.sh 0.1.0
+curl -fsSL https://raw.githubusercontent.com/lyloou/ssh-mgr/main/install.sh | bash -s -- 0.1.0
 ```
 
 The installer places the binary in `~/.local/bin` and adds that directory to `.zshrc` or `.bashrc`. Reload the shell configuration before running `ssh-mgr`. Set `SSH_MGR_INSTALL_DIR` to choose another directory.
